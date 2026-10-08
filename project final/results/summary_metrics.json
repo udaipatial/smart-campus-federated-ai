@@ -1,0 +1,114 @@
+{
+    "experiment_timestamp": "2026-10-07T11:14:39.196303",
+    "buildings_evaluated": [
+        "building_A",
+        "building_B",
+        "building_C",
+        "building_D"
+    ],
+    "metrics_comparison": {
+        "Accuracy": {
+            "Centralized": 99.07,
+            "Federated": 97.69,
+            "Delta": -1.39,
+            "Unit": "%"
+        },
+        "Precision": {
+            "Centralized": 100.0,
+            "Federated": 85.92,
+            "Delta": -14.08,
+            "Unit": "%"
+        },
+        "Recall": {
+            "Centralized": 88.73,
+            "Federated": 85.92,
+            "Delta": -2.82,
+            "Unit": "%"
+        },
+        "F1 Score": {
+            "Centralized": 94.03,
+            "Federated": 85.92,
+            "Delta": -8.11,
+            "Unit": "%"
+        },
+        "Training Time": {
+            "Centralized": 10.666,
+            "Federated": 4.876,
+            "Delta": -5.79,
+            "Unit": "seconds"
+        },
+        "Inference Latency": {
+            "Centralized": 0.003,
+            "Federated": 0.0034,
+            "Delta": 0.0003,
+            "Unit": "ms/sample"
+        },
+        "Communication Overhead": {
+            "Centralized": 0.455,
+            "Federated": 1.111,
+            "Delta": 0.655,
+            "Unit": "MB"
+        },
+        "Privacy Preservation": {
+            "Centralized": "None (Raw Data Transmitted)",
+            "Federated": "High (Parameter Updates Only)",
+            "Delta": "GDPR / FERPA Compliant",
+            "Unit": "Category"
+        }
+    },
+    "federated_details": {
+        "num_rounds": 15,
+        "participating_clients": 4,
+        "total_bytes_communicated": 1164480,
+        "per_client_performance": {
+            "building_A": {
+                "client_id": "building_A",
+                "accuracy": 0.7685185185185185,
+                "precision": 0.2753623188405797,
+                "recall": 1.0,
+                "f1": 0.4318181818181819,
+                "test_samples": 216,
+                "anomaly_samples": 19,
+                "detected_anomalies": 69,
+                "inference_latency_ms": 0.004636111380359916
+            },
+            "building_B": {
+                "client_id": "building_B",
+                "accuracy": 0.9768518518518519,
+                "precision": 0.85,
+                "recall": 0.8947368421052632,
+                "f1": 0.8717948717948718,
+                "test_samples": 216,
+                "anomaly_samples": 19,
+                "detected_anomalies": 20,
+                "inference_latency_ms": 0.0032453702900696684
+            },
+            "building_C": {
+                "client_id": "building_C",
+                "accuracy": 0.9907407407407407,
+                "precision": 0.9285714285714286,
+                "recall": 0.9285714285714286,
+                "f1": 0.9285714285714286,
+                "test_samples": 216,
+                "anomaly_samples": 14,
+                "detected_anomalies": 14,
+                "inference_latency_ms": 0.0038435181421745154
+            },
+            "building_D": {
+                "client_id": "building_D",
+                "accuracy": 1.0,
+                "precision": 1.0,
+                "recall": 1.0,
+                "f1": 1.0,
+                "test_samples": 216,
+                "anomaly_samples": 19,
+                "detected_anomalies": 19,
+                "inference_latency_ms": 0.0036856481865807263
+            }
+        }
+    },
+    "centralized_details": {
+        "total_raw_bytes": 477428,
+        "epochs": 60
+    }
+}
