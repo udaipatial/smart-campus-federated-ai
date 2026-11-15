@@ -3,6 +3,7 @@ FastAPI Dashboard Backend for Federated Smart Campus Energy Monitor.
 Serves interactive APIs and web user interface.
 """
 
+import json
 import os
 import sys
 from pathlib import Path
