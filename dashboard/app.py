@@ -381,6 +381,18 @@ async def inject_live_anomaly(building_id: str, anomaly_type: str):
         "target_building": building_id
     }
 
+def _external_base_url(request: Request) -> str:
+    """Absolute base URL of this API as the client reached it.
+
+    Behind a TLS-terminating proxy (Vercel, Render, any load balancer) the ASGI
+    request itself is plain http, so honour X-Forwarded-Proto/Host when present;
+    otherwise fall back to what the request reports. No URL is ever hardcoded.
+    """
+    proto = (request.headers.get("x-forwarded-proto") or request.url.scheme).split(",")[0].strip()
+    host = request.headers.get("x-forwarded-host") or request.headers.get("host")
+    netloc = host.split(",")[0].strip() if host else request.url.netloc
+    return f"{proto}://{netloc}"
+
 @app.get("/api/figures-list")
 async def get_figures_list(request: Request):
     """Lists all available publication-ready figures.
@@ -388,7 +400,7 @@ async def get_figures_list(request: Request):
     URLs are resolved from the incoming request so they point at this API host
     when the frontend is served from a different origin (no URL is hardcoded).
     """
-    base_url = str(request.base_url).rstrip("/")
+    base_url = _external_base_url(request)
     figures = []
     for fig_file in sorted(config.FIGURES_DIR.glob("*.png")):
         figures.append({
