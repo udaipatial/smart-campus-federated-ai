@@ -9,7 +9,6 @@ htmlcov/
 .vscode/
 .idea/
 my project/
-baground.gif
 
 # Local environment (never commit real values; .env.example is the template)
 .env

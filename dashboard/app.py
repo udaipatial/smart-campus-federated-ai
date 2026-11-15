@@ -201,11 +201,10 @@ async def get_privacy_audit():
     with open(audit_path, "r") as f:
         return json.load(f)
 
-import copy
 from datetime import datetime, timedelta
 import torch
 from src.anomaly_detection.models import EnergyAutoencoder, predict_anomalies
-from src.preprocessing.pipeline import engineer_features, FeatureScaler, preprocess_dataframe
+from src.preprocessing.pipeline import engineer_features, FeatureScaler
 
 # Realtime In-Memory Streaming State
 class RealtimeCampusStream:
