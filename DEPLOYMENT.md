@@ -1,112 +1,158 @@
 # Deployment
 
-The whole application — FastAPI API **and** the dashboard UI — runs on Vercel as
-a single Python Function. Local development and production therefore behave
-identically: same entrypoint, same paths, same-origin, no CORS to configure.
+The dashboard frontend is a static site on Vercel and the FastAPI + PyTorch API
+runs on a separate Python host. This is what `main` deploys today and it must
+keep working; the "everything on Vercel" variant lives on a separate branch so it
+can be tried without touching the live site.
 
 ```
-Vercel project
-└── FastAPI app (dashboard.app:app)   ← one Function, every request
-    ├── /                → dashboard/static/index.html
-    ├── /static/*        → dashboard/static/*   (app.js, style.css, config.js, favicon.svg)
-    ├── /figures/*       → results/figures/*    (publication figures)
-    └── /api/*           → JSON APIs + live PyTorch inference
+Vercel (static, branch main)                 Python host (FastAPI + PyTorch)
+public/index.html, app.js, config.js  ────▶  uvicorn dashboard.app:app
+VITE_API_BASE_URL ─────────────────────────▶  ALLOWED_ORIGINS (CORS allowlist)
 ```
 
-Vercel loads the app from `[tool.vercel] entrypoint = "dashboard.app:app"` in
-`pyproject.toml` and installs dependencies from that file, using the committed
-`uv.lock`. The lock pins **`torch==2.15.0+cpu`**; the default PyPI wheel would
-drag in ~4 GB of CUDA libraries.
+## 1. Frontend on Vercel (live)
 
-## Required Vercel project settings
+`vercel.json` pins this configuration, so Vercel ignores framework detection:
 
-| Setting | Value | Why |
-| --- | --- | --- |
-| Framework Preset | **FastAPI** | Runs `dashboard.app:app` as the site's single Function. |
-| Build Command | *(empty — preset default)* | The Python preset installs dependencies itself. |
-| Output Directory | *(empty — preset default)* | Nothing static is published; FastAPI serves the UI. |
-| Root Directory | repository root | `pyproject.toml` lives there. |
-| **Settings → Functions → Large Functions** | **enabled** | Mandatory, see below. |
+| Setting | Value |
+| --- | --- |
+| Framework Preset | Other / none (`"framework": null`) |
+| Build Command | `node scripts/build-frontend.mjs` |
+| Output Directory | `public` |
+| Rewrite | `/static/*` → `/*` (the HTML/CSS reference assets through `/static/`) |
 
-### Large Functions is mandatory
+`scripts/build-frontend.mjs` copies `dashboard/static/` into `public/` and writes
+`public/config.js` from `VITE_API_BASE_URL`. It fails the build on a malformed
+URL and writes `apiBaseUrl: ""` when the variable is absent.
 
-A cold install of this app is ~1.2 GB (torch CPU alone is ~750 MB). Vercel's
-standard Python Function bundle limit is **500 MB**, so the build fails on size
-without Large Functions. Large Functions (public beta, Fluid compute) raises the
-Python bundle limit to **5 GB**; enable it in Settings → Functions before
-deploying. The bundle also contains the repo's own files (`data/`, `models/`,
-`results/`), which the API reads at runtime — a few tens of MB.
+Without a backend the UI shell still renders — but the KPIs, charts and figures
+are the static placeholders from `index.html` (94.7%, round 10) and `/api/*`
+returns 404 from Vercel. That is the current state; the page is not broken, it is
+just not connected.
+
+## 2. Backend on a Python host (needed to make the live site functional)
+
+Any host that runs a long-lived Python process, exposes `$PORT` and allows a
+~1.2 GB dependency install works. Render is documented here because its Python
+runtime takes a build and start command directly.
+
+Create a **Web Service** from this repo:
+
+| Setting | Value |
+| --- | --- |
+| Runtime | Python 3 |
+| Build command | `pip install uv && uv sync --frozen` |
+| Start command | `uv run uvicorn dashboard.app:app --host 0.0.0.0 --port $PORT` |
+| Health check path | `/api/health` |
+| Environment | `ALLOWED_ORIGINS=https://<your-app>.vercel.app` |
+
+`uv sync --frozen` installs from `uv.lock`, which pins `torch==2.15.0+cpu`. The
+default PyPI wheel pulls ~4 GB of CUDA libraries; `requirements.txt` points pip at
+the same CPU index as a fallback, but the lock is the reproducible path.
+
+Memory: importing torch and loading `models/federated_global.pt` needs roughly
+300–400 MB RSS. 512 MB is the practical minimum, 2 GB is comfortable. Free tiers
+that sleep make the first request slow (~30 s).
+
+Then set `VITE_API_BASE_URL=https://<backend-host>` (no trailing slash) in Vercel
+→ Settings → Environment Variables and **redeploy**: the value is baked into
+`config.js` at build time, so a restart is not enough.
+
+## 3. Optional: everything on Vercel (branch `vercel-fastapi`)
+
+Vercel can run the whole FastAPI app as one Function — UI, `/static`, `/figures`
+and `/api` all on one origin, so no CORS and no `VITE_API_BASE_URL`.
+
+It is kept on the **`vercel-fastapi` branch**, never on `main`, because:
+
+- it requires **Settings → Functions → Large Functions** (public beta, 5 GB
+  bundle cap). A cold install is ~1.2 GB (torch CPU alone ~750 MB) and the
+  standard Python bundle limit is 500 MB, so without that toggle the build fails;
+- switching the live project's Framework Preset to FastAPI would replace the
+  static deployment, which is exactly the risk this layout avoids.
+
+Try it without touching production:
+
+1. In Vercel, create a **new project** from the same repo and select the
+   `vercel-fastapi` branch. It gets its own URL; the live project still builds
+   `main`.
+2. In that new project enable Large Functions, then deploy.
+3. Check `https://<new-project>.vercel.app/api/health` and the UI (KPIs should
+   read 94.5% / round 15, not the 94.7% / 10 placeholders).
+4. If it fails or is too slow, delete the project. Production was never touched.
+
+Do not promote that variant into the existing project unless you accept
+replacing the static deployment. If you do switch the existing project, the
+reversal is: Framework Preset back to **Other**, Build Command
+`node scripts/build-frontend.mjs`, Output Directory `public`, then redeploy
+`main` — all values come from `main`'s `vercel.json`.
 
 ## Environment variables
 
-None are required for the Vercel deployment. The API and UI share an origin.
+| Variable | Where | Required | Purpose |
+| --- | --- | --- | --- |
+| `VITE_API_BASE_URL` | Vercel, build time | Yes for the split deployment | Backend base URL, no trailing slash. Baked into `public/config.js`. |
+| `ALLOWED_ORIGINS` | Backend host | Yes in production | Comma-separated **exact** frontend origins allowed to call the API. Unset → loopback origins only. |
+| `PORT` | Injected by the backend host | Auto | Port uvicorn binds to. |
 
-| Variable | When it is needed | Purpose |
-| --- | --- | --- |
-| `ALLOWED_ORIGINS` | Only for the split deployment below, or if you call the API from another origin | Comma-separated exact origins allowed to call the API. Unset → loopback origins only, which is enough for local tools. |
-| `VITE_API_BASE_URL` | Only for the split deployment below | Backend base URL baked into `public/config.js` by `scripts/build-frontend.mjs`. Not used when Vercel runs the FastAPI app. |
+No deployment URL or secret is committed. `.env.example` documents both
+variables; copy it to `.env` for local overrides (`.env` is gitignored).
 
-`.env.example` documents both. Never commit real values; `.env` is gitignored.
+## CORS
+
+- Production: only the exact origins in `ALLOWED_ORIGINS` are allowed. No
+  wildcard; credentials are disabled because the API is unauthenticated.
+- Unset: loopback origins (`http://localhost:<port>`, `http://127.0.0.1:<port>`)
+  are allowed, which only helps local tooling.
+- Vercel preview deployments have per-branch URLs — add each one you use,
+  comma-separated. Wildcards are deliberately not supported.
+
+A CORS failure shows up as a console error while the network tab shows the
+request and `curl` works fine.
 
 ## Local development
+
+Same entrypoint as production, same-origin, no configuration:
 
 ```bash
 pip install -r requirements.txt   # or: uv sync --frozen
 python serve.py                   # http://127.0.0.1:8000
 ```
 
-`dashboard/static/config.js` defaults to `apiBaseUrl: ""` (same origin), so the
-UI calls whichever host served it.
+`dashboard/static/config.js` defaults to `apiBaseUrl: ""`, so the UI calls the
+host that served it.
 
 ## Verify a deployment
 
 ```bash
-curl -s https://<your-app>.vercel.app/api/health | python -m json.tool
-# → {"status": "ok", "model_checkpoint_found": true, "cors_mode": "local-dev", ...}
+# Backend
+curl -s "$BACKEND_URL/api/health" | python -m json.tool
+# → {"status": "ok", "model_checkpoint_found": true, ...}
 
-curl -s -o /dev/null -w "%{http_code}\n" https://<your-app>.vercel.app/          # 200 (UI)
-curl -s -o /dev/null -w "%{http_code}\n" https://<your-app>.vercel.app/static/app.js
-curl -s https://<your-app>.vercel.app/api/buildings | head -c 200                 # 4 buildings
-curl -s https://<your-app>.vercel.app/api/figures-list | head -c 200              # 8 figures
-curl -s https://<your-app>.vercel.app/api/stream/tick?building_id=building_A      # live torch inference
+curl -s "$BACKEND_URL/api/buildings" | head -c 200; echo
+curl -s "$BACKEND_URL/api/figures-list" | head -c 200; echo
+
+# CORS allow / deny
+curl -s -D- -o /dev/null -H "Origin: $FRONTEND_URL" "$BACKEND_URL/api/summary" | grep -i access-control-allow-origin
+curl -s -D- -o /dev/null -H "Origin: https://not-allowed.example" "$BACKEND_URL/api/summary" | grep -i access-control-allow-origin
+
+# Frontend was built against the right backend
+curl -s "$FRONTEND_URL/config.js"
 ```
 
-Then load the UI: KPI cards must show **94.5%** and round **15** (the values the
-API returns). If they show 94.7% / round 10, the page is rendering the static
-placeholders from `index.html` and the API is not being reached.
-
-## Cold starts
-
-The Function imports torch and loads `models/federated_global.pt` on start, so
-the first request after an idle period can take 10–20 s. `maxDuration` is set to
-60 s in `vercel.json`. Live streaming polls every 2.5 s while the stream toggle
-is on, which keeps the instance warm.
-
-## Alternative: split deployment (static frontend + separate Python host)
-
-Use this only if a Vercel bundle of ~1.2 GB is unacceptable. The dashboard UI is
-plain static files, so it can be published on Vercel while the API runs on any
-host with room for ML wheels:
-
-1. Vercel: Build Command `node scripts/build-frontend.mjs`, Output Directory
-   `public`, and set `VITE_API_BASE_URL=https://<backend-host>` (no trailing
-   slash). `scripts/build-frontend.mjs` copies `dashboard/static` into `public/`
-   and writes `public/config.js` from that variable.
-2. Backend host: start `uv run uvicorn dashboard.app:app --host 0.0.0.0 --port $PORT`
-   after `pip install uv && uv sync --frozen`, and set
-   `ALLOWED_ORIGINS=https://<your-app>.vercel.app` (exact origin, comma-separated
-   for several).
-3. `vercel.json` must then drop the `functions` entry and add
-   `"buildCommand"`, `"outputDirectory"` and the `/static/*` rewrite, because the
-   FastAPI app is no longer serving the UI.
+In the UI: KPI **94.5%** and round **15** mean the API is answering; **94.7%** and
+round **10** are the static placeholders, i.e. the frontend is not reaching the
+API.
 
 ## Troubleshooting
 
 | Symptom | Cause |
 | --- | --- |
-| Build fails with a bundle size error | Large Functions is not enabled (1.2 GB > 500 MB). |
-| `ModuleNotFoundError: No module named 'fastapi'` | Dependencies were resolved from a `pyproject.toml` without `[project] dependencies`, or the FastAPI preset was not selected. |
-| Build downloads ~4 GB | The CUDA torch wheel was selected — install from `uv.lock`, or keep the `--extra-index-url` line in `requirements.txt`. |
-| UI loads but charts/KPIs are placeholders (94.7%, round 10) while `/api/*` 404s | The app is not the deployed Function: the project is still building the static-only frontend. Set Framework Preset to FastAPI and clear Build Command / Output Directory. |
-| First request takes ~20 s | Cold start: torch import plus model load. |
-| CORS error in the browser | Split deployment with `ALLOWED_ORIGINS` not exactly matching the frontend origin. |
+| UI shows placeholders, `/api/*` 404s on the Vercel URL | No backend connected yet: `VITE_API_BASE_URL` unset, or not redeployed after setting it. |
+| `ModuleNotFoundError: No module named 'fastapi'` on the backend | Dependencies resolved from a `pyproject.toml` without `[project] dependencies`. Install with `uv sync --frozen`. |
+| Backend build downloads ~4 GB | The CUDA torch wheel was selected; use the lock, or keep the `--extra-index-url` line in `requirements.txt`. |
+| Build killed / OOM at runtime | Instance below ~512 MB RAM while importing torch. |
+| CORS error in the browser, `curl` works | `ALLOWED_ORIGINS` does not exactly match the frontend origin (scheme, host and port all count). |
+| Figures 404 | Backend host has no `results/figures/`; commit them or run `python run.py`. |
+| Full-stack-on-Vercel build fails on bundle size | Large Functions not enabled (~1.2 GB vs 500 MB limit). |
