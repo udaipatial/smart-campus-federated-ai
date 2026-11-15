@@ -1,4 +1,12 @@
-# Deployment
+# Deployment (branch `vercel-fastapi`)
+
+> **This branch is an opt-in experiment, not the live site.** `main` keeps the
+> static frontend deployment that works today; this branch runs the whole
+> FastAPI app as one Vercel Function so the API can be tried on Vercel itself.
+> Deploy it as a **separate Vercel project** pointed at this branch. Rolling back
+> is switching that project (or a new one) back to `main` — production is never
+> modified by anything here. A cold install is ~1.2 GB, so **Settings → Functions
+> → Large Functions must be enabled** or the build fails on the 500 MB limit.
 
 The dashboard frontend is a static site on Vercel and the FastAPI + PyTorch API
 runs on a separate Python host. This is what `main` deploys today and it must

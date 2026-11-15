@@ -23,3 +23,8 @@ explicit = true
 # The default PyPI torch wheel bundles ~4 GB of CUDA libraries, which exceeds
 # Vercel's function bundle limits. The CPU-only wheel is enough for inference.
 torch = { index = "pytorch-cpu" }
+
+[tool.vercel]
+# This branch runs the whole FastAPI app as one Function on Vercel: the UI,
+# /static, /figures and /api all share an origin, so no CORS or API base URL.
+entrypoint = "dashboard.app:app"
