@@ -11,9 +11,12 @@ RESULTS_DIR = BASE_DIR / "results"
 FIGURES_DIR = RESULTS_DIR / "figures"
 DASHBOARD_DIR = BASE_DIR / "dashboard"
 
-# Ensure required directories exist
+# Ensure required directories exist (safely handled for read-only environments like Vercel)
 for directory in [DATA_DIR, MODELS_DIR, RESULTS_DIR, FIGURES_DIR]:
-    directory.mkdir(parents=True, exist_ok=True)
+    try:
+        directory.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        pass
 
 # Simulation & Data Settings
 RANDOM_SEED = 42

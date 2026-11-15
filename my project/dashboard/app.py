@@ -3,9 +3,16 @@ FastAPI Dashboard Backend for Federated Smart Campus Energy Monitor.
 Serves interactive APIs and web user interface.
 """
 
-import json
+import os
+import sys
 from pathlib import Path
 from typing import Dict, Any, List
+
+# Ensure repository root is on sys.path for robust resolution in all environments (local, Vercel serverless, etc.)
+BASE_DIR = Path(__file__).resolve().parent.parent
+if str(BASE_DIR) not in sys.path:
+    sys.path.insert(0, str(BASE_DIR))
+
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
@@ -30,11 +37,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Mount static files and figures
+# Mount static files and figures safely
 STATIC_DIR = Path(__file__).resolve().parent / "static"
-STATIC_DIR.mkdir(parents=True, exist_ok=True)
-app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
-app.mount("/figures", StaticFiles(directory=str(config.FIGURES_DIR)), name="figures")
+try:
+    STATIC_DIR.mkdir(parents=True, exist_ok=True)
+except OSError:
+    pass
+
+if STATIC_DIR.exists():
+    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+if config.FIGURES_DIR.exists():
+    app.mount("/figures", StaticFiles(directory=str(config.FIGURES_DIR)), name="figures")
 
 @app.get("/")
 async def root():

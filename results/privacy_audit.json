@@ -1,0 +1,30 @@
+{
+    "framework": "Federated Edge-AI Framework for Privacy-Preserving Smart Campus Energy",
+    "audit_timestamp": "2026-11-15T14:33:20.792282",
+    "edge_nodes": [
+        "building_A",
+        "building_B",
+        "building_C",
+        "building_D"
+    ],
+    "privacy_guarantees": {
+        "data_at_rest": "Local edge storage (building_A.csv, building_B.csv, building_C.csv, building_D.csv)",
+        "data_in_transit": "Only PyTorch state_dict parameter tensors (weights + biases)",
+        "central_server_visibility": "Zero access to raw occupancy, voltage, or granular load profiles",
+        "governance_compliance": "Fully compliant with GDPR / FERPA edge privacy guidelines"
+    },
+    "comparison_matrix": {
+        "Centralized": {
+            "raw_data_leaves_edge": true,
+            "data_exposure_risk": "HIGH (Single point of failure, raw sensor stream interception)",
+            "data_residency": "Central Cloud Repository",
+            "privacy_preservation_score": "LOW"
+        },
+        "Federated": {
+            "raw_data_leaves_edge": false,
+            "data_exposure_risk": "MINIMAL (Mathematical parameter aggregation only)",
+            "data_residency": "100% On-Device Edge Nodes",
+            "privacy_preservation_score": "MAXIMAL"
+        }
+    }
+}
