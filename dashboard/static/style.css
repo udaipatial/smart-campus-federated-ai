@@ -657,6 +657,7 @@ body {
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: 12px;
     font-size: 12.5px;
 }
 
@@ -664,7 +665,15 @@ body {
     display: flex;
     align-items: center;
     gap: 8px;
+    min-width: 0;
     color: var(--text-light);
+}
+
+/* Long node names truncate instead of colliding with their percentage */
+.legend-left > span:last-child {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .legend-dot {
@@ -677,6 +686,8 @@ body {
 .legend-pct {
     color: var(--text-muted);
     font-weight: 600;
+    flex-shrink: 0;
+    white-space: nowrap;
 }
 
 /* Row 3: Latest Training Round & System Activity */
