@@ -1,12 +1,8 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "framework": null,
-  "buildCommand": "node scripts/build-frontend.mjs",
-  "outputDirectory": "public",
-  "rewrites": [
-    {
-      "source": "/static/(.*)",
-      "destination": "/$1"
+  "functions": {
+    "dashboard/app.py": {
+      "maxDuration": 60
     }
-  ]
+  }
 }
