@@ -14,7 +14,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -29,12 +29,24 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# Enable CORS for development
+# CORS: the frontend may be deployed separately (e.g. static site on Vercel) from
+# this API (e.g. Render). Production deployments set ALLOWED_ORIGINS to the
+# comma-separated, exact origins of the deployed frontend. With no configuration
+# the API allows loopback origins only, which keeps local development working
+# (the UI served by this app is same-origin and needs no CORS at all).
+LOCAL_DEV_ORIGIN_REGEX = r"^http://(localhost|127\.0\.0\.1)(:\d+)?$"
+ALLOWED_ORIGINS = [
+    origin.strip().rstrip("/")
+    for origin in os.environ.get("ALLOWED_ORIGINS", "").split(",")
+    if origin.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
+    allow_origins=ALLOWED_ORIGINS,
+    allow_origin_regex=None if ALLOWED_ORIGINS else LOCAL_DEV_ORIGIN_REGEX,
+    allow_credentials=False,  # unauthenticated API: no cookies are sent cross-origin
+    allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -50,6 +62,19 @@ if STATIC_DIR.exists():
 
 if config.FIGURES_DIR.exists():
     app.mount("/figures", StaticFiles(directory=str(config.FIGURES_DIR)), name="figures")
+
+@app.get("/api/health")
+async def health():
+    """Liveness probe for hosting platforms and post-deploy connectivity checks."""
+    return {
+        "status": "ok",
+        "service": "smart-campus-energy-api",
+        "version": app.version,
+        "entrypoint": "dashboard.app:app",
+        "model_checkpoint_found": (config.MODELS_DIR / "federated_global.pt").exists(),
+        "buildings": sorted(config.BUILDINGS.keys()),
+        "cors_mode": "allowlist" if ALLOWED_ORIGINS else "local-dev",
+    }
 
 @app.get("/")
 async def root():
@@ -357,14 +382,19 @@ async def inject_live_anomaly(building_id: str, anomaly_type: str):
     }
 
 @app.get("/api/figures-list")
-async def get_figures_list():
-    """Lists all available publication-ready figures."""
+async def get_figures_list(request: Request):
+    """Lists all available publication-ready figures.
+
+    URLs are resolved from the incoming request so they point at this API host
+    when the frontend is served from a different origin (no URL is hardcoded).
+    """
+    base_url = str(request.base_url).rstrip("/")
     figures = []
     for fig_file in sorted(config.FIGURES_DIR.glob("*.png")):
         figures.append({
             "name": fig_file.stem.replace("_", " ").title(),
             "filename": fig_file.name,
-            "url": f"/figures/{fig_file.name}"
+            "url": f"{base_url}/figures/{fig_file.name}"
         })
     return figures
 

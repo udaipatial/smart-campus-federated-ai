@@ -5,6 +5,16 @@
 
 'use strict';
 
+// ── Backend Base URL ───────────────────────────────────────────────────────
+// Empty string means "same origin": local development, where FastAPI serves
+// this UI itself. In a split deployment the static build generates config.js
+// from VITE_API_BASE_URL, so every API call reaches the separately hosted API.
+const API_BASE_URL = ((window.__APP_CONFIG__ && window.__APP_CONFIG__.apiBaseUrl) || '').replace(/\/+$/, '');
+
+function apiUrl(path) {
+    return `${API_BASE_URL}${path}`;
+}
+
 // ── Application State ──────────────────────────────────────────────────────
 let dashTrainingChart   = null;
 let dashDonutChart      = null;
@@ -149,7 +159,7 @@ async function loadAllApplicationData() {
 // ── Fetch Summary Metrics & Populate Dashboard ─────────────────────────────
 async function fetchSummary() {
     try {
-        const res = await fetch('/api/summary');
+        const res = await fetch(apiUrl('/api/summary'));
         if (!res.ok) return;
         const data = await res.json();
         cachedSummary = data;
@@ -184,7 +194,7 @@ async function fetchSummary() {
 // ── Fetch Federated Convergence Rounds ─────────────────────────────────────
 async function fetchFederatedRounds() {
     try {
-        const res = await fetch('/api/federated-rounds');
+        const res = await fetch(apiUrl('/api/federated-rounds'));
         if (!res.ok) return;
         const rounds = await res.json();
         cachedFederatedRounds = rounds;
@@ -500,7 +510,7 @@ function renderDashboardActivityFeed(rounds) {
 // ==========================================================================
 async function fetchBuildings() {
     try {
-        const res = await fetch('/api/buildings');
+        const res = await fetch(apiUrl('/api/buildings'));
         if (!res.ok) return;
         const buildings = await res.json();
         cachedBuildings = buildings;
@@ -626,7 +636,7 @@ function renderSparkline(buildingId, data, isAnomaly) {
 // ── Live Telemetry Data ────────────────────────────────────────────────────
 async function fetchTelemetryData(bId) {
     try {
-        const res = await fetch(`/api/building/${bId}/telemetry?limit=80`);
+        const res = await fetch(apiUrl(`/api/building/${bId}/telemetry?limit=80`));
         if (!res.ok) return;
         const data = await res.json();
 
@@ -711,7 +721,7 @@ function renderTelemetryChart(data) {
 // ==========================================================================
 async function fetchAnomalies() {
     try {
-        const res = await fetch('/api/anomalies?limit=30');
+        const res = await fetch(apiUrl('/api/anomalies?limit=30'));
         if (!res.ok) return;
         const anomalies = await res.json();
 
@@ -745,7 +755,7 @@ function clearLiveFeed() {
 
 async function triggerLiveInjection(anomalyType) {
     try {
-        const res = await fetch(`/api/stream/inject?building_id=${selectedBuilding}&anomaly_type=${anomalyType}`, {
+        const res = await fetch(apiUrl(`/api/stream/inject?building_id=${selectedBuilding}&anomaly_type=${anomalyType}`), {
             method: 'POST'
         });
         const result = await res.json();
@@ -798,7 +808,7 @@ function stopLiveStreaming() {
 async function streamSingleTick() {
     if (!isStreamingActive) return;
     try {
-        const res = await fetch('/api/stream/tick?building_id=all');
+        const res = await fetch(apiUrl('/api/stream/tick?building_id=all'));
         if (!res.ok) return;
         const tickData = await res.json();
 
@@ -1119,7 +1129,7 @@ function startSimulatedTraining() {
 // ==========================================================================
 async function fetchPrivacyAudit() {
     try {
-        const res = await fetch('/api/privacy-audit');
+        const res = await fetch(apiUrl('/api/privacy-audit'));
         if (!res.ok) return;
         const audit = await res.json();
 
@@ -1151,7 +1161,7 @@ async function fetchPrivacyAudit() {
 
 async function fetchFigures() {
     try {
-        const res = await fetch('/api/figures-list');
+        const res = await fetch(apiUrl('/api/figures-list'));
         if (!res.ok) return;
         const figures = await res.json();
 

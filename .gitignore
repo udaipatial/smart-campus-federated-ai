@@ -11,3 +11,12 @@ htmlcov/
 my project/
 baground.gif
 
+# Local environment (never commit real values; .env.example is the template)
+.env
+.env.*
+!.env.example
+
+# Local virtualenvs and the generated static build
+.venv/
+venv/
+public/
