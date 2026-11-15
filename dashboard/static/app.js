@@ -15,6 +15,18 @@ function apiUrl(path) {
     return `${API_BASE_URL}${path}`;
 }
 
+// The API returns federated history rows shaped
+// { round, mean_local_loss, accuracy, precision, recall, f1, round_comm_kb,
+//   cumulative_comm_mb, ... } where accuracy and f1 are 0..1 fractions.
+// Normalise here so every chart reads the same fields and a missing value
+// becomes null instead of throwing inside a Chart.js callback.
+function roundSeries(rounds, key, scale = 1) {
+    return (rounds || []).map(r => {
+        const value = Number(r && r[key]);
+        return Number.isFinite(value) ? value * scale : null;
+    });
+}
+
 // ── Application State ──────────────────────────────────────────────────────
 let dashTrainingChart   = null;
 let dashDonutChart      = null;
@@ -207,10 +219,10 @@ async function fetchFederatedRounds() {
             if (rVal) rVal.textContent = lastRound.round;
 
             const rAcc = document.getElementById('dash-acc-val');
-            if (rAcc) rAcc.textContent = `${lastRound.global_accuracy.toFixed(1)}%`;
+            if (rAcc) rAcc.textContent = `${(Number(lastRound.accuracy) * 100).toFixed(1)}%`;
 
             const rLoss = document.getElementById('dash-loss-val');
-            if (rLoss) rLoss.textContent = lastRound.mean_loss.toFixed(3);
+            if (rLoss) rLoss.textContent = Number(lastRound.mean_local_loss).toFixed(3);
 
             // Update models trained count if available
             const modelsTrainedEl = document.getElementById('dash-models-trained');
@@ -225,10 +237,19 @@ async function fetchFederatedRounds() {
         renderDashboardDonutChart();
         renderDashboardActivityFeed(rounds);
 
-        // Render Model Training & Federation page charts
-        renderFederationConvergenceChart(rounds);
-        renderCommProgressionChart(rounds);
-        renderTrainingPageCharts(rounds);
+        // Render Model Training & Federation page charts. Each render is isolated
+        // so one bad dataset cannot blank the other panels.
+        [
+            ['federation convergence', () => renderFederationConvergenceChart(rounds)],
+            ['communication bandwidth', () => renderCommProgressionChart(rounds)],
+            ['training page', () => renderTrainingPageCharts(rounds)]
+        ].forEach(([name, render]) => {
+            try {
+                render();
+            } catch (err) {
+                console.error(`Failed to render ${name} chart:`, err);
+            }
+        });
 
     } catch (err) {
         console.error('Error fetching federated rounds:', err);
@@ -253,7 +274,7 @@ const floatingBadgePlugin = {
 
         const lastPoint = meta.data[meta.data.length - 1];
         const lastVal = chart.data.datasets[0].data[chart.data.datasets[0].data.length - 1];
-        if (lastPoint && lastVal !== undefined) {
+        if (lastPoint && Number.isFinite(lastVal)) {
             const text = `${lastVal.toFixed(1)}%`;
             ctx.save();
             ctx.font = 'bold 12px Inter, sans-serif';
@@ -296,7 +317,7 @@ function renderDashboardTrainingChart(rounds) {
 
     if (rounds && rounds.length > 0) {
         labels = rounds.map(r => `Round ${r.round}`);
-        dataPoints = rounds.map(r => r.global_accuracy);
+        dataPoints = roundSeries(rounds, 'accuracy', 100);
     } else {
         // High fidelity baseline matching preview image (84% to 94.7%)
         labels = ['Round 1', '2', '3', '4', '5', '6', '7', '8', '9', '10'];
@@ -999,9 +1020,9 @@ function renderFederationConvergenceChart(rounds) {
 
     if (convergenceChart) convergenceChart.destroy();
 
-    const labels = rounds.map(r => `Round ${r.round}`);
-    const lossData = rounds.map(r => r.mean_loss);
-    const f1Data = rounds.map(r => r.global_f1);
+    const labels = (rounds || []).map(r => `Round ${r.round}`);
+    const lossData = roundSeries(rounds, 'mean_local_loss');
+    const f1Data = roundSeries(rounds, 'f1', 100);
 
     convergenceChart = new Chart(ctx, {
         type: 'line',
@@ -1044,34 +1065,62 @@ function renderCommProgressionChart(rounds) {
 
     if (commChart) commChart.destroy();
 
-    const labels = rounds.map(r => `Round ${r.round}`);
-    const commData = rounds.map(r => r.cumulative_comm_mb);
+    const labels = (rounds || []).map(r => `Round ${r.round}`);
+    const commData = roundSeries(rounds, 'cumulative_comm_mb');
+    const perRoundData = roundSeries(rounds, 'round_comm_kb', 1 / 1024);
 
     commChart = new Chart(ctx, {
         type: 'line',
         data: {
             labels: labels,
-            datasets: [{
-                label: 'Cumulative Parameter Upload (MB)',
-                data: commData,
-                borderColor: '#A855F7',
-                borderWidth: 2.5,
-                backgroundColor: 'rgba(168, 85, 247, 0.2)',
-                fill: true,
-                tension: 0.2
-            }]
+            datasets: [
+                {
+                    label: 'Cumulative Parameter Upload (MB)',
+                    data: commData,
+                    borderColor: '#A855F7',
+                    borderWidth: 2.5,
+                    backgroundColor: 'rgba(168, 85, 247, 0.2)',
+                    fill: true,
+                    tension: 0.2,
+                    yAxisID: 'y'
+                },
+                {
+                    label: 'Per-Round Weight Payload (MB)',
+                    data: perRoundData,
+                    borderColor: '#38D9F5',
+                    borderWidth: 2,
+                    borderDash: [5, 4],
+                    tension: 0.2,
+                    yAxisID: 'yRound'
+                }
+            ]
         },
         options: {
             responsive: true,
             maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
             scales: {
-                y: { ticks: { callback: v => `${v.toFixed(2)} MB` } }
+                y: {
+                    position: 'left',
+                    title: { display: true, text: 'Cumulative (MB)', color: '#A855F7' },
+                    ticks: { color: '#A855F7', callback: v => `${Number(v).toFixed(2)} MB` },
+                    grid: { color: 'rgba(255, 255, 255, 0.06)' }
+                },
+                yRound: {
+                    position: 'right',
+                    grid: { display: false },
+                    title: { display: true, text: 'Per round (MB)', color: '#38D9F5' },
+                    ticks: { color: '#38D9F5', callback: v => `${Number(v).toFixed(4)} MB` }
+                },
+                x: { ticks: { color: '#94A3B8' }, grid: { display: false } }
             }
         }
     });
 }
 
 function renderTrainingPageCharts(rounds) {
+    const labels = (rounds || []).map(r => `R${r.round}`);
+
     // Loss Chart
     const lossCanvas = document.getElementById('trainingLossChart');
     if (lossCanvas) {
@@ -1081,20 +1130,32 @@ function renderTrainingPageCharts(rounds) {
         trainingLossChart = new Chart(ctx, {
             type: 'line',
             data: {
-                labels: rounds.map(r => `R${r.round}`),
+                labels: labels,
                 datasets: [{
                     label: 'MSE Loss',
-                    data: rounds.map(r => r.mean_loss),
+                    data: roundSeries(rounds, 'mean_local_loss'),
                     borderColor: '#38D9F5',
                     borderWidth: 2.5,
+                    backgroundColor: 'rgba(56, 217, 245, 0.16)',
+                    fill: true,
                     tension: 0.3
                 }]
             },
-            options: { responsive: true, maintainAspectRatio: false }
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        ticks: { color: '#94A3B8', callback: v => Number(v).toFixed(3) },
+                        grid: { color: 'rgba(255, 255, 255, 0.06)' }
+                    },
+                    x: { ticks: { color: '#94A3B8' }, grid: { display: false } }
+                }
+            }
         });
     }
 
-    // F1 Chart
+    // F1-Score & Detection Accuracy
     const f1Canvas = document.getElementById('trainingF1Chart');
     if (f1Canvas) {
         const ctx = f1Canvas.getContext('2d');
@@ -1103,16 +1164,39 @@ function renderTrainingPageCharts(rounds) {
         trainingF1Chart = new Chart(ctx, {
             type: 'line',
             data: {
-                labels: rounds.map(r => `R${r.round}`),
-                datasets: [{
-                    label: 'Global F1 (%)',
-                    data: rounds.map(r => r.global_f1),
-                    borderColor: '#A855F7',
-                    borderWidth: 2.5,
-                    tension: 0.3
-                }]
+                labels: labels,
+                datasets: [
+                    {
+                        label: 'Global F1 (%)',
+                        data: roundSeries(rounds, 'f1', 100),
+                        borderColor: '#A855F7',
+                        borderWidth: 2.5,
+                        tension: 0.3
+                    },
+                    {
+                        label: 'Detection Accuracy (%)',
+                        data: roundSeries(rounds, 'accuracy', 100),
+                        borderColor: '#22C55E',
+                        borderWidth: 2.5,
+                        borderDash: [5, 4],
+                        tension: 0.3
+                    }
+                ]
             },
-            options: { responsive: true, maintainAspectRatio: false }
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                scales: {
+                    y: {
+                        min: 50,
+                        max: 100,
+                        ticks: { color: '#94A3B8', callback: v => `${v}%` },
+                        grid: { color: 'rgba(255, 255, 255, 0.06)' }
+                    },
+                    x: { ticks: { color: '#94A3B8' }, grid: { display: false } }
+                }
+            }
         });
     }
 }
